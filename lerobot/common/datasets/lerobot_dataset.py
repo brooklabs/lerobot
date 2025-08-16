@@ -878,7 +878,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         ep_stats = compute_episode_stats(episode_buffer, self.features)
 
         if len(self.meta.video_keys) > 0:
+            print(f"Encoding videos for episode {episode_index}!")
             video_paths = self.encode_episode_videos(episode_index)
+            print("Finished encoding videos!")
             for key in self.meta.video_keys:
                 episode_buffer[key] = video_paths[key]
 

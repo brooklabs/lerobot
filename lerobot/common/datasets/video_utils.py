@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pyarrow as pa
+import retry
 import torch
 import torchvision
 from datasets.features.features import register_feature
@@ -243,6 +244,7 @@ def decode_video_frames_torchcodec(
     return closest_frames
 
 
+@retry.retry(tries=5, exceptions=subprocess.TimeoutExpired)
 def encode_video_frames(
     imgs_dir: Path | str,
     video_path: Path | str,
@@ -250,7 +252,7 @@ def encode_video_frames(
     vcodec: str = "libsvtav1",
     pix_fmt: str = "yuv420p",
     g: int | None = 2,
-    crf: int | None = 30,
+    crf: int | None = 25,
     fast_decode: int = 0,
     log_level: str | None = "error",
     overwrite: bool = False,
@@ -259,6 +261,7 @@ def encode_video_frames(
     video_path = Path(video_path)
     imgs_dir = Path(imgs_dir)
     video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.unlink(missing_ok=True)
 
     ffmpeg_args = OrderedDict(
         [
@@ -269,6 +272,7 @@ def encode_video_frames(
             ("-pix_fmt", pix_fmt),
         ]
     )
+    ffmpeg_args["-preset"] = "12"
 
     if g is not None:
         ffmpeg_args["-g"] = str(g)
@@ -290,7 +294,12 @@ def encode_video_frames(
 
     ffmpeg_cmd = ["ffmpeg"] + ffmpeg_args + [str(video_path)]
     # redirect stdin to subprocess.DEVNULL to prevent reading random keyboard inputs from terminal
-    subprocess.run(ffmpeg_cmd, check=True, stdin=subprocess.DEVNULL)
+    print("Running ffmpeg command: ", ffmpeg_cmd)
+    try:
+        subprocess.run(ffmpeg_cmd, check=True, stdin=subprocess.DEVNULL, timeout=60 * 20)
+    except subprocess.TimeoutExpired as e:
+        print("ffmpeg command timed out after 20 minutes. Killing process...", flush=True)
+        raise e
 
     if not video_path.exists():
         raise OSError(
